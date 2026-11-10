@@ -1,0 +1,15 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+# Party Panic keeps every party in server memory, so it must run as ONE instance.
+services:
+  - type: web
+    name: party-panic
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /healthz
+    numInstances: 1
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "20"

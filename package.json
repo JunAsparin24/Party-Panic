@@ -1,0 +1,23 @@
+{
+  "name": "party-panic",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Party Panic — a chaotic multiplayer party game for 2–20 players on their phones.",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "test:bots": "node scripts/bots.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "qrcode": "^1.5.4",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.1"
+  }
+}
