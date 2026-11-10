@@ -1,5 +1,6 @@
 // Small DOM helpers shared by every screen.
-import { renderAvatar } from '/shared/avatar.js';
+import { renderCharacter, slotInfo } from '/shared/characters.js';
+import { icon } from './icons.js';
 
 export function h(tag, props, ...kids) {
   const el = document.createElement(tag);
@@ -28,8 +29,14 @@ function appendKids(el, kids) {
   }
 }
 
-export const $ = (sel, root = document) => root.querySelector(sel);
-export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+/** Like replaceChildren but skips null/false and flattens arrays. */
+export function fill(el, ...kids) {
+  el.replaceChildren();
+  appendKids(el, kids);
+  return el;
+}
+
+export { icon };
 
 let current = null;
 let currentCleanup = null;
@@ -47,14 +54,10 @@ export function show(screen, cleanup) {
   if (old) {
     old.classList.add('out');
     old.style.pointerEvents = 'none';
-    setTimeout(() => old.remove(), 350);
+    setTimeout(() => old.remove(), 380);
   }
   app.append(screen);
   return screen;
-}
-
-export function clearScreen() {
-  show(h('div'));
 }
 
 export function toast(msg, kind = 'info', ms = 3200) {
@@ -64,15 +67,19 @@ export function toast(msg, kind = 'info', ms = 3200) {
   setTimeout(() => el.remove(), ms + 400);
 }
 
-export function avatar(cfg, opts = {}) {
-  const el = h('div', { class: `avatar ${opts.class || ''}`, html: renderAvatar(cfg, opts) });
+/** A character portrait. opts: size (px), mood, crown, class, ring (colour). */
+export function char(slot, opts = {}) {
+  const el = h('div', { class: `char ${opts.class || ''}`, html: renderCharacter(slot, opts) });
   if (opts.size) el.style.setProperty('--size', typeof opts.size === 'number' ? `${opts.size}px` : opts.size);
+  if (opts.ring) el.style.setProperty('--ring', opts.ring);
   return el;
 }
 
-export function avatarUrl(cfg, opts = {}) {
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(renderAvatar(cfg, opts))}`;
+export function charUrl(slot, opts = {}) {
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(renderCharacter(slot, opts))}`;
 }
+
+export const charName = (slot) => slotInfo(slot).name;
 
 /** Animate a number in an element. */
 export function countUp(el, from, to, dur = 900, prefix = '') {
@@ -118,11 +125,15 @@ export function ordinal(n) {
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** Big tap handler that fires on pointerdown for snappy mobile input. */
+/** Tap handler that fires on pointerdown for snappy mobile input. */
 export function onTap(el, fn) {
   el.addEventListener('pointerdown', (e) => {
     if (e.button !== undefined && e.button > 0) return;
     e.preventDefault();
     fn(e);
   });
+}
+
+export function pickOne(list) {
+  return list[Math.floor(Math.random() * list.length)];
 }

@@ -70,7 +70,7 @@ export default function create(api) {
     },
     progress() {
       const out = {};
-      for (const [id, s] of st) out[id] = { v: s.score, label: `${s.score} pts${s.bombs ? ` · 💣${s.bombs}` : ''}` };
+      for (const [id, s] of st) out[id] = { v: s.score, label: `${s.score} pts${s.bombs ? ` · ${s.bombs} bomb${s.bombs === 1 ? '' : 's'}` : ''}` };
       return out;
     },
     finish() {

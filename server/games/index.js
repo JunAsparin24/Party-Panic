@@ -10,6 +10,7 @@ import catchGame from './catch.js';
 import double from './double.js';
 import maze from './maze.js';
 import redlight from './redlight.js';
+import tug from './tug.js';
 
 export const SERVER_GAMES = {
   timing,
@@ -22,4 +23,5 @@ export const SERVER_GAMES = {
   double,
   maze,
   redlight,
+  tug,
 };

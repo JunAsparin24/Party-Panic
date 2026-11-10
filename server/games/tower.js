@@ -66,7 +66,7 @@ export default function create(api) {
     },
     progress() {
       const out = {};
-      for (const [id, s] of st) out[id] = { v: s.score, label: `${s.height} blocks${s.done ? ' 💥' : ''}` };
+      for (const [id, s] of st) out[id] = { v: s.score, label: `${s.height} blocks`, h: s.height, w: s.blocks[s.blocks.length - 1].w, x: s.blocks[s.blocks.length - 1].x, done: s.done };
       return out;
     },
     finish() {

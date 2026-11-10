@@ -88,7 +88,7 @@ export default {
   demo() {
     return demoPhone(
       h('div', { class: 'demo-bar' }, h('div', { class: 'demo-zone' }), h('div', { class: 'demo-marker' })),
-      h('div', { class: 'demo-tap' }, '👆')
+      h('div', { class: 'demo-tap' })
     );
   },
 };

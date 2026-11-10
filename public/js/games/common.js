@@ -51,4 +51,3 @@ export function demoPhone(...kids) {
   return h('div', { class: 'demo-phone' }, h('div', { class: 'demo-screen' }, ...kids));
 }
 
-export const EMOJI_FONT = 'system-ui, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';

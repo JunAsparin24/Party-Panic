@@ -146,12 +146,12 @@ io.on('connection', (socket) => {
     reply({ ok: true, code: r.code, token: r.hostToken, role: 'host', state: r.hostState() });
   });
 
-  on('player:join', ({ code, name, avatar }, reply) => {
+  on('player:join', ({ code, name, character }, reply) => {
     const r = rooms.get(String(code || '').trim());
     if (!r) return reply({ ok: false, error: "Couldn't find that party. Check the code!" });
     const old = room();
     if (old) old.handleDisconnect(socket);
-    const res = r.addPlayer(socket, name, avatar);
+    const res = r.addPlayer(socket, name, character);
     if (!res.ok) return reply(res);
     reply({ ok: true, code: r.code, token: res.player.token, role: 'player', state: r.playerState(res.player) });
   });
@@ -169,9 +169,15 @@ io.on('connection', (socket) => {
     reply({ ok: true, code: r.code, role: 'player', state: r.playerState(p) });
   });
 
-  on('player:avatar', (avatar) => {
+  on('player:character', ({ slot }, reply) => {
     const r = room();
-    if (r && socket.data.role === 'player') r.setAvatar(socket.data.pid, avatar);
+    if (!r || socket.data.role !== 'player') return reply({ ok: false });
+    reply(r.setCharacter(socket.data.pid, slot));
+  });
+
+  on('player:react', ({ r: reaction }) => {
+    const r = room();
+    if (r && socket.data.role === 'player') r.react(socket.data.pid, reaction);
   });
 
   on('player:ready', () => {
@@ -214,7 +220,7 @@ io.on('connection', (socket) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`\n🎉 Party Panic is running!\n`);
+  console.log(`\nParty Panic is running!\n`);
   if (PUBLIC_URL) {
     console.log(`   Public URL:   ${PUBLIC_URL}`);
   } else {

@@ -92,6 +92,7 @@ export const sfx = {
     for (let t = 0; t < dur; t += 0.05) noise(0.05, { vol: 0.12 + (t / dur) * 0.15, delay: t, filter: 700 });
   },
   crash: () => noise(1.1, { vol: 0.35, filter: 6000 }),
+  splat: () => { noise(0.25, { vol: 0.4, filter: 900 }); tone(180, 0.18, { type: 'sine', vol: 0.25, slide: 60 }); },
   eliminated: () => [400, 300, 200].forEach((f, i) => tone(f, 0.25, { type: 'sawtooth', vol: 0.12, delay: i * 0.18 })),
   levelUp: () => [392, 523, 659, 784].forEach((f, i) => tone(f, 0.1, { type: 'triangle', vol: 0.2, delay: i * 0.06 })),
 };

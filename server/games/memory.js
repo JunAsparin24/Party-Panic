@@ -80,7 +80,7 @@ export default function create(api) {
     },
     progress() {
       const out = {};
-      for (const [id, s] of st) out[id] = { v: s.score, label: `Lv ${s.level} · ${'❤'.repeat(s.lives)}` };
+      for (const [id, s] of st) out[id] = { v: s.score, label: `Level ${s.level} · ${s.lives} ${s.lives === 1 ? 'life' : 'lives'}` };
       return out;
     },
     finish() {

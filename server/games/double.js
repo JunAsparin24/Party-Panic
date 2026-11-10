@@ -59,7 +59,7 @@ export default function create(api) {
     },
     progress() {
       const out = {};
-      for (const [id, s] of st) out[id] = { v: s.bank, label: `${s.bank} banked${s.step >= 3 ? ` · 🔥${s.pot}` : ''}` };
+      for (const [id, s] of st) out[id] = { v: s.bank, label: `${s.bank} banked${s.step >= 3 ? ` · risking ${s.pot}` : ''}` };
       return out;
     },
     finish() {

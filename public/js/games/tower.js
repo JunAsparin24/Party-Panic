@@ -1,5 +1,5 @@
 // Tower Trouble — phone controller (canvas).
-import { h, onTap } from '../ui.js';
+import { h, fill, char, icon, onTap } from '../ui.js';
 import { tri, fitCanvas, roundRect, demoPhone } from './common.js';
 
 export default {
@@ -150,6 +150,48 @@ export default {
         bag.timeout(() => ctx.finished('Tower complete!', `${m.height} blocks high`), 900);
       }
     });
+  },
+
+  // Big screen: everyone's tower side by side.
+  host(ctx) {
+    const wrap = h('div', { class: 'tw-host' });
+    ctx.root.append(wrap);
+    const cols = new Map();
+    for (const p of ctx.players) {
+      const stack = h('div', { class: 'twh-stack' });
+      const top = h('div', { class: 'twh-top' }, char(p.character, { size: 44 }));
+      const label = h('div', { class: 'twh-label' }, h('b', null, '0'), h('span', null, p.name));
+      const col = h('div', { class: 'twh-col' }, h('div', { class: 'twh-sky' }, top, stack), label);
+      cols.set(p.id, { col, stack, top, label, h: -1 });
+      wrap.append(col);
+    }
+    const colors = (i) => `hsl(${(i * 27 + 330) % 360} 80% 62%)`;
+    return {
+      full: true,
+      progress(prog) {
+        const maxH = Math.max(8, ...Object.values(prog).map((x) => x.h || 0));
+        const room = (wrap.clientHeight || 400) - 130;
+        const bh = Math.max(4, Math.min(26, room / (maxH + 1)));
+        for (const [id, c] of cols) {
+          const pr = prog[id];
+          if (!pr) continue;
+          if (pr.h !== c.h) {
+            c.h = pr.h;
+            // Widths shrink from the base towards the current top width.
+            const blocks = [];
+            for (let i = 0; i <= pr.h; i++) {
+              const w = 0.5 + (pr.w - 0.5) * (pr.h ? i / pr.h : 0);
+              blocks.push(h('div', { class: 'twh-block', style: { width: `${w * 180}%`, background: colors(i) } }));
+            }
+            fill(c.stack, blocks.reverse());
+            fill(c.label, h('b', null, pr.h), h('span', null, ctx.p(id).name));
+            if (pr.h > 0) { c.top.classList.remove('hop-once'); void c.top.offsetWidth; c.top.classList.add('hop-once'); }
+          }
+          c.stack.style.setProperty('--bh', `${bh}px`);
+          c.col.classList.toggle('fallen', !!pr.done);
+        }
+      },
+    };
   },
 
   demo() {

@@ -1,5 +1,5 @@
 // Number Rush — phone controller.
-import { h, onTap } from '../ui.js';
+import { h, fill, icon, onTap } from '../ui.js';
 import { demoPhone } from './common.js';
 
 export default {
@@ -19,7 +19,7 @@ export default {
     if (ctx.reversed) keys = keys.reverse();
     const pad = h('div', { class: 'nr-pad' },
       keys.map((k) => {
-        const b = h('button', { class: `nr-key ${k === '✓' ? 'go' : k === '⌫' ? 'del' : ''}` }, k);
+        const b = h('button', { class: `nr-key ${k === '✓' ? 'go' : k === '⌫' ? 'del' : ''}` }, k === '✓' ? icon('check') : k === '⌫' ? icon('back') : k);
         onTap(b, () => press(k, b));
         return b;
       }));
@@ -29,7 +29,8 @@ export default {
       q.textContent = prob.q;
       ans.textContent = value || '?';
       ans.classList.toggle('empty', !value);
-      streakEl.textContent = streak >= 2 ? `🔥 ${streak} in a row!` : 'Solve it!';
+      if (streak >= 2) fill(streakEl, icon('fire'), `${streak} in a row`);
+      else streakEl.textContent = 'Solve it';
       streakEl.classList.toggle('hot', streak >= 3);
     };
     render();

@@ -1,6 +1,6 @@
 // Entry point: background, routing between home / host / player, reconnects.
 import { net, socket, session, syncClock, prefs } from './net.js';
-import { h, show, toast } from './ui.js';
+import { h, show, toast, icon } from './ui.js';
 import { renderHome } from './home.js';
 import { HostApp } from './host.js';
 import { PlayerApp } from './player.js';
@@ -10,22 +10,10 @@ let app = null;
 let onHome = false;
 
 // ---------------------------------------------------------------- background
-(function background() {
-  const bg = document.getElementById('bg');
-  const shapes = ['circle', 'tri', 'star', 'squig', 'ring', 'plus'];
-  const colors = ['#ff4f9a', '#ffd23f', '#2de2e6', '#3ddc84', '#ff8c42', '#8e5cff'];
-  for (let i = 0; i < 16; i++) {
-    const el = document.createElement('div');
-    el.className = `bg-shape ${shapes[i % shapes.length]}`;
-    el.style.left = `${(i * 61) % 100}%`;
-    el.style.top = `${(i * 37) % 100}%`;
-    el.style.setProperty('--c', colors[i % colors.length]);
-    el.style.setProperty('--s', `${22 + ((i * 13) % 34)}px`);
-    el.style.animationDelay = `${-i * 1.7}s`;
-    el.style.animationDuration = `${14 + (i % 5) * 3}s`;
-    bg.append(el);
-  }
-})();
+document.getElementById('bg').append(
+  Object.assign(document.createElement('div'), { className: 'bg-rays' }),
+  Object.assign(document.createElement('div'), { className: 'bg-dots' }),
+);
 
 // ---------------------------------------------------------------- routing
 function startApp(role, state) {
@@ -61,8 +49,8 @@ async function onCreate() {
   startApp('host', r.state);
 }
 
-async function onJoin({ code, name, avatar }) {
-  const r = await net.request('player:join', { code, name, avatar });
+async function onJoin({ code, name, character }) {
+  const r = await net.request('player:join', { code, name, character });
   if (!r.ok) return r.error || 'Could not join';
   session.set({ code: r.code, token: r.token, role: 'player' });
   prefs.set('name', name);
@@ -111,10 +99,10 @@ socket.on('replaced', () => {
   show(
     h('div', { class: 'center-screen' },
       h('div', { class: 'card big-msg' },
-        h('div', { class: 'emoji-xl' }, '📱'),
+        h('div', { class: 'empty-icon' }, icon('phone')),
         h('h2', null, 'Opened somewhere else'),
         h('p', null, 'This party is now open in another tab or device.'),
-        h('button', { class: 'btn btn-yellow', onclick: () => location.reload() }, 'Use it here instead')
+        h('button', { class: 'btn btn-primary', onclick: () => location.reload() }, 'Use it here instead')
       )
     )
   );

@@ -1,20 +1,14 @@
-// The phone controller: lobby + avatar editor, ready-up, minigames, results.
+// The phone controller: character select, lobby, ready-up, minigames,
+// results and reactions.
 import { net, prefs } from './net.js';
-import { h, show, avatar, countUp, Bag, ordinal } from './ui.js';
+import { h, fill, show, toast, char, charName, icon, countUp, Bag, ordinal, onTap } from './ui.js';
+import { art } from './art.js';
 import { sfx, vibrate } from './sound.js';
 import { fx } from './fx.js';
 import { GAMES } from '/shared/games.js';
-import { MODES, MODS, TEAMS } from '/shared/config.js';
-import { AVATAR_OPTIONS, AVATAR_LABELS, AVATAR_KEYS, randomAvatar } from '/shared/avatar.js';
+import { MODES, MODS, TEAMS, REACTIONS } from '/shared/config.js';
+import { SLOTS } from '/shared/characters.js';
 import { GAME_CLIENTS } from './games/index.js';
-
-const COLOR_KEYS = new Set(['skin', 'hairColor', 'outfit', 'bg']);
-const NICE = {
-  hair: ['Short', 'Spiky', 'Long', 'Bob', 'Curly', 'Bun', 'Mohawk', 'Ponytail', 'Bald'],
-  eyes: ['Round', 'Happy', 'Sleepy', 'Wink', 'Sparkle', 'Dots'],
-  mouth: ['Smile', 'Grin', 'Open', 'Smirk', 'Tongue', 'Cat'],
-  acc: ['None', 'Glasses', 'Shades', 'Cap', 'Headphones', 'Bow', 'Beanie', 'Flower'],
-};
 
 export class PlayerApp {
   constructor(state, leave) {
@@ -25,17 +19,21 @@ export class PlayerApp {
     this.screenBag = new Bag();
     this.hooks = {};
     this.renderedStateId = null;
-    const subs = [
+    this.state = state;
+    this.picking = state.phase === 'lobby' && !this.pickedBefore(state.code);
+    [
       net.on('state', (s) => this.onState(s)),
       net.on('roster', (r) => this.onRoster(r)),
       net.on('settings', (s) => { this.state.settings = s; this.hooks.settings?.(s); }),
       net.on('ready', (ids) => this.hooks.ready?.(ids)),
       net.on('g:msg', (m) => this.hooks.gameMsg?.(m)),
       net.on('endsAt', (t) => { this.state.endsAt = t; }),
-    ];
-    subs.forEach((f) => this.bag.add(f));
+    ].forEach((f) => this.bag.add(f));
     document.body.classList.add('is-player');
-    this.bag.add(() => document.body.classList.remove('is-player', 'upside'));
+    this.bag.add(() => {
+      document.body.classList.remove('is-player', 'upside');
+      document.body.style.removeProperty('--theme');
+    });
     this.onState(state);
   }
 
@@ -44,7 +42,15 @@ export class PlayerApp {
     this.bag.run();
   }
 
-  p(id) { return this.players.get(id) || { id, name: '???', avatar: {} }; }
+  pickedBefore(code) {
+    try { return sessionStorage.getItem(`pp-picked-${code}`) === '1'; } catch { return false; }
+  }
+
+  markPicked() {
+    try { sessionStorage.setItem(`pp-picked-${this.state.code}`, '1'); } catch { /* ignore */ }
+  }
+
+  p(id) { return this.players.get(id) || { id, name: '???', character: 'dee-0' }; }
 
   onRoster(list) {
     this.players = new Map(list.map((p) => [p.id, p]));
@@ -63,6 +69,7 @@ export class PlayerApp {
       return;
     }
     this.renderedStateId = s.stateId;
+    if (s.phase !== 'lobby') this.picking = false;
     this.render();
   }
 
@@ -73,6 +80,8 @@ export class PlayerApp {
     this.hooks = {};
     document.body.classList.remove('upside');
     const s = this.state;
+    const gameId = s.data?.gameId;
+    document.body.style.setProperty('--theme', gameId && ['tutorial', 'countdown', 'playing', 'results'].includes(s.phase) ? GAMES[gameId].color : '#9b6bff');
     const spectating = !this.me.alive && ['wheel', 'tutorial', 'countdown', 'playing'].includes(s.phase);
     let screen;
     if (spectating) screen = this.renderSpectating();
@@ -85,7 +94,7 @@ export class PlayerApp {
         case 'results': screen = this.renderResults(); break;
         case 'leaderboard': screen = this.renderLeaderboard(); break;
         case 'final': screen = this.renderFinal(); break;
-        default: screen = this.renderLobby();
+        default: screen = this.picking ? this.renderPicker() : this.renderLobby();
       }
     }
     show(screen, () => bag.run());
@@ -95,73 +104,114 @@ export class PlayerApp {
     const me = this.me;
     const team = me.team != null ? TEAMS[me.team] : null;
     return h('div', { class: 'p-top', style: team ? { '--team': team.color } : null },
-      avatar(me.avatar, { size: 36 }),
-      h('div', { class: 'p-top-name' }, me.name, team ? h('span', { class: 'p-team' }, `${team.icon} ${team.name}`) : null),
-      h('div', { class: 'p-top-score' }, `${me.score.toLocaleString()} pts`));
+      char(me.character, { size: 38 }),
+      h('div', { class: 'p-top-name' }, me.name, team ? h('span', { class: 'p-team' }, team.name) : null),
+      h('div', { class: 'p-top-score' }, me.score.toLocaleString(), h('small', null, 'pts')));
+  }
+
+  reactionBar() {
+    const bar = h('div', { class: 'react-bar' });
+    let cool = 0;
+    for (const r of REACTIONS) {
+      const b = h('button', { class: 'react-btn', 'aria-label': r }, art(r));
+      onTap(b, () => {
+        const now = Date.now();
+        if (now < cool) return;
+        cool = now + 650;
+        net.emit('player:react', { r });
+        vibrate(12);
+        b.classList.remove('sent');
+        void b.offsetWidth;
+        b.classList.add('sent');
+        bar.classList.add('cooling');
+        setTimeout(() => bar.classList.remove('cooling'), 650);
+      });
+      bar.append(b);
+    }
+    return h('div', { class: 'react-dock' }, h('div', { class: 'react-label' }, 'React on the big screen'), bar);
+  }
+
+  // ------------------------------------------------------------ character select
+
+  renderPicker() {
+    const grid = h('div', { class: 'pick-grid' });
+    const preview = h('div', { class: 'pick-preview' });
+    const renderPreview = () => {
+      fill(preview,
+        char(this.me.character, { size: 128, class: 'swap-in', mood: 'happy' }),
+        h('div', { class: 'pick-name' }, charName(this.me.character)));
+    };
+    let busy = false;
+    const renderGrid = () => {
+      const takenBy = new Map(this.state.players.filter((p) => p.id !== this.me.id).map((p) => [p.character, p.name]));
+      fill(grid, SLOTS.map((s) => {
+        const taker = takenBy.get(s.slot);
+        const mine = s.slot === this.me.character;
+        const b = h('button', { class: `pick-tile ${mine ? 'mine' : ''} ${taker ? 'taken' : ''}`, 'aria-label': s.name },
+          char(s.slot, { size: 62 }),
+          taker ? h('span', { class: 'pick-taker' }, taker) : null);
+        onTap(b, async () => {
+          if (busy || mine) return;
+          if (taker) { sfx.bad(); toast(`${taker} already picked ${s.name}.`, 'error', 1800); return; }
+          busy = true;
+          sfx.click();
+          const r = await net.request('player:character', { slot: s.slot });
+          busy = false;
+          if (!r.ok) { toast(r.error || 'Try another one.', 'error'); return; }
+          this.me.character = s.slot;
+          prefs.set('character', s.slot);
+          vibrate(15);
+          sfx.pop();
+          renderPreview();
+          renderGrid();
+        });
+        return b;
+      }));
+    };
+    this.hooks.roster = () => {
+      const mine = this.players.get(this.me.id);
+      if (mine) this.me.character = mine.character;
+      renderGrid();
+    };
+    renderPreview();
+    renderGrid();
+    const done = h('button', { class: 'btn btn-primary btn-xl pick-done' }, "That's me", icon('check'));
+    done.onclick = () => {
+      sfx.join();
+      prefs.set('character', this.me.character);
+      this.markPicked();
+      this.picking = false;
+      this.render();
+    };
+    return h('div', { class: 'p-screen p-picker' },
+      h('header', { class: 'p-head' }, h('span', { class: 'chip code' }, `Room ${this.state.code}`), h('span', { class: 'muted' }, this.me.name)),
+      h('h1', { class: 'p-title' }, 'Pick your character'),
+      preview,
+      grid,
+      done);
   }
 
   // ------------------------------------------------------------ lobby
 
   renderLobby() {
     const s = this.state;
-    const bag = this.screenBag;
-    let av = { ...this.me.avatar };
-    const preview = h('div', { class: 'p-preview' }, avatar(av, { size: 150, class: 'bob' }));
-    let sendTimer = null;
-    const update = (patch) => {
-      av = { ...av, ...patch };
-      prefs.set('avatar', av);
-      preview.replaceChildren(avatar(av, { size: 150, class: 'wiggle' }));
-      clearTimeout(sendTimer);
-      sendTimer = setTimeout(() => net.emit('player:avatar', av), 150);
-      renderEditor();
-    };
-    bag.add(() => { clearTimeout(sendTimer); });
-
-    const editor = h('div', { class: 'av-editor card' });
-    const renderEditor = () => {
-      editor.replaceChildren(
-        ...AVATAR_KEYS.map((k) => {
-          const opts = AVATAR_OPTIONS[k];
-          if (COLOR_KEYS.has(k)) {
-            return h('div', { class: 'av-row' },
-              h('div', { class: 'av-label' }, AVATAR_LABELS[k]),
-              h('div', { class: 'swatches' },
-                opts.map((c, i) => h('button', {
-                  class: `swatch ${av[k] === i ? 'on' : ''}`, style: { background: c }, 'aria-label': `${AVATAR_LABELS[k]} ${i + 1}`,
-                  onclick: () => { sfx.click(); update({ [k]: i }); },
-                }))));
-          }
-          const step = (dir) => () => { sfx.click(); update({ [k]: (av[k] + dir + opts.length) % opts.length }); };
-          return h('div', { class: 'av-row' },
-            h('div', { class: 'av-label' }, AVATAR_LABELS[k]),
-            h('div', { class: 'stepper' },
-              h('button', { class: 'step', onclick: step(-1), 'aria-label': 'Previous' }, '◀'),
-              h('span', { class: 'step-val' }, NICE[k]?.[av[k]] ?? av[k] + 1),
-              h('button', { class: 'step', onclick: step(1), 'aria-label': 'Next' }, '▶')));
-        })
-      );
-    };
-    renderEditor();
-
-    const randomize = h('button', { class: 'btn btn-pink' }, '🎲 Randomize');
-    randomize.onclick = () => { sfx.pop(); update(randomAvatar()); };
-
     const roster = h('div', { class: 'p-roster' });
     const info = h('div', { class: 'p-wait-info' });
     const renderRoster = (list) => {
-      roster.replaceChildren(...list.map((p) =>
-        h('div', { class: `pr-item ${p.id === this.me.id ? 'me' : ''} ${p.connected ? '' : 'offline'}` }, avatar(p.avatar, { size: 44 }), h('span', null, p.name))));
+      fill(roster, list.map((p) =>
+        h('div', { class: `pr-item ${p.id === this.me.id ? 'me' : ''} ${p.connected ? '' : 'offline'}` }, char(p.character, { size: 46 }), h('span', null, p.name))));
     };
     const renderInfo = (st) => {
       const m = MODES[st.mode];
-      info.replaceChildren(h('span', { class: 'chip' }, m.icon, ' ', m.name), h('span', { class: 'chip' }, `${st.rounds} rounds`), h('span', { class: 'chip' }, `${st.games.length} games`));
+      fill(info, h('span', { class: 'chip' }, icon(m.icon), m.name), h('span', { class: 'chip' }, `${st.rounds} rounds`), h('span', { class: 'chip' }, `${st.games.length} games`));
     };
     this.hooks.roster = renderRoster;
     this.hooks.settings = renderInfo;
     renderRoster(s.players);
     renderInfo(s.settings);
 
+    const change = h('button', { class: 'btn btn-light btn-sm' }, icon('edit'), 'Change character');
+    change.onclick = () => { sfx.click(); this.picking = true; this.render(); };
     const leave = h('button', { class: 'btn-link' }, 'Leave');
     leave.onclick = async () => {
       if (!confirm('Leave this party?')) return;
@@ -171,16 +221,16 @@ export class PlayerApp {
 
     return h('div', { class: 'p-screen p-lobby' },
       h('header', { class: 'p-head' }, h('span', { class: 'chip code' }, `Room ${s.code}`), leave),
-      h('h1', { class: 'p-title' }, "You're in!"),
-      preview,
-      h('div', { class: 'p-name' }, this.me.name),
-      h('div', { class: 'p-waiting pulse' }, 'Waiting for the host to start', h('span', { class: 'dots' })),
+      h('div', { class: 'p-hero' },
+        char(this.me.character, { size: 150, class: 'idle-bob' }),
+        h('div', { class: 'p-name' }, this.me.name),
+        h('div', { class: 'muted' }, charName(this.me.character)),
+        change),
+      h('div', { class: 'p-waiting' }, h('span', { class: 'pulse-dot' }), 'Waiting for the host to start'),
       info,
-      h('div', { class: 'section-label' }, 'Customise your look'),
-      editor,
-      randomize,
       h('div', { class: 'section-label' }, 'In the party'),
-      roster);
+      roster,
+      this.reactionBar());
   }
 
   // ------------------------------------------------------------ wheel
@@ -190,7 +240,7 @@ export class PlayerApp {
     const g = GAMES[d.gameId];
     const bag = this.screenBag;
     const reveal = h('div', { class: 'p-reveal hidden', style: { '--c': g.color } },
-      h('div', { class: 'pr-icon' }, g.icon), h('div', { class: 'pr-name' }, g.name), h('div', { class: 'pr-tag' }, g.tagline));
+      h('div', { class: 'pr-icon' }, icon(g.icon)), h('div', { class: 'pr-name' }, g.name), h('div', { class: 'pr-tag' }, g.tagline));
     const spinner = h('div', { class: 'mini-wheel' });
     const mods = h('div', { class: 'p-mods' });
     bag.timeout(() => {
@@ -199,17 +249,19 @@ export class PlayerApp {
       sfx.good();
       vibrate(40);
       if (d.mods?.length) {
-        bag.timeout(() => mods.replaceChildren(...d.mods.map((id) => h('div', { class: 'mod-card small' }, h('span', { class: 'mod-icon' }, MODS[id].icon), h('b', null, MODS[id].name), h('div', { class: 'mod-desc' }, MODS[id].desc)))), 800);
+        bag.timeout(() => fill(mods, d.mods.map((id) =>
+          h('div', { class: 'mod-card small' }, h('div', { class: 'mod-icon' }, icon(MODS[id].icon)), h('div', null, h('div', { class: 'mod-name' }, MODS[id].name), h('div', { class: 'mod-desc' }, MODS[id].desc))))), 800);
       }
     }, d.spinMs || 4600);
     return h('div', { class: 'p-screen p-center' },
       this.topBar(),
       h('div', { class: 'round-tag' }, `Round ${this.state.round} of ${this.state.totalRounds}`),
-      d.isFinal ? h('div', { class: 'final-banner small' }, '🔥 FINAL ROUND', d.finalDouble ? ' · ×2' : '') : null,
+      d.isFinal ? h('div', { class: 'final-banner small' }, d.finalDouble ? 'Final round · ×2' : 'Final round') : null,
       spinner,
       reveal,
       mods,
-      h('p', { class: 'muted' }, 'Watch the big screen!'));
+      h('p', { class: 'muted' }, 'Watch the big screen'),
+      this.reactionBar());
   }
 
   // ------------------------------------------------------------ tutorial
@@ -218,11 +270,11 @@ export class PlayerApp {
     const d = this.state.data;
     const g = GAMES[d.gameId];
     const bag = this.screenBag;
-    const btn = h('button', { class: 'btn btn-green btn-xl ready-btn' }, "I'm Ready!");
+    const btn = h('button', { class: 'btn btn-primary btn-xl ready-btn' }, "I'm ready");
     const status = h('div', { class: 'ready-status' });
     const setReady = () => {
       btn.disabled = true;
-      btn.textContent = '✓ Ready!';
+      fill(btn, icon('check'), 'Ready');
       btn.classList.add('is-ready');
     };
     if ((d.ready || []).includes(this.me.id)) setReady();
@@ -234,23 +286,23 @@ export class PlayerApp {
     };
     const renderStatus = (ids) => {
       const parts = this.state.players.filter((p) => p.alive && !p.left);
-      status.textContent = `${ids.length}/${parts.length} players ready`;
+      status.textContent = `${ids.length} of ${parts.length} players ready`;
     };
     this.hooks.ready = renderStatus;
     renderStatus(d.ready || []);
-    const fill = h('div', { class: 'tb-fill' });
+    const fillEl = h('div', { class: 'tb-fill' });
     const total = Math.max(1, this.state.endsAt - net.now());
-    bag.raf(() => { fill.style.transform = `scaleX(${Math.max(0, this.state.endsAt - net.now()) / total})`; });
+    bag.raf(() => { fillEl.style.transform = `scaleX(${Math.max(0, this.state.endsAt - net.now()) / total})`; });
 
     return h('div', { class: 'p-screen p-tutorial', style: { '--c': g.color } },
       this.topBar(),
-      h('div', { class: 'timer-bar' }, fill),
-      h('div', { class: 'pt-icon' }, g.icon),
+      h('div', { class: 'timer-bar' }, fillEl),
+      h('div', { class: 'pt-icon' }, icon(g.icon)),
       h('h1', { class: 'pt-name' }, g.name),
       h('ol', { class: 'tut-steps small' }, g.howTo.map((x) => h('li', null, x))),
-      h('div', { class: 'control-chip' }, '🎮 ', g.control),
-      d.mods?.length ? h('div', { class: 'mod-badges' }, d.mods.map((id) => h('span', { class: 'mod-badge' }, MODS[id].icon, ' ', MODS[id].name))) : null,
-      d.modData?.golden === this.me.id ? h('div', { class: 'golden-you' }, '👑 You are the Golden Player! Triple points!') : null,
+      h('div', { class: 'control-chip' }, icon('phone'), g.control),
+      d.mods?.length ? h('div', { class: 'mod-badges' }, d.mods.map((id) => h('span', { class: 'mod-badge' }, icon(MODS[id].icon), MODS[id].name))) : null,
+      d.modData?.golden === this.me.id ? h('div', { class: 'golden-you' }, icon('crown'), 'You are the Golden Player. Triple points!') : null,
       btn,
       status);
   }
@@ -263,18 +315,18 @@ export class PlayerApp {
     let last = null;
     this.screenBag.raf(() => {
       const left = this.state.endsAt - net.now();
-      const v = left > 2500 ? '3' : left > 1500 ? '2' : left > 500 ? '1' : 'GO!';
+      const v = left > 2500 ? '3' : left > 1500 ? '2' : left > 500 ? '1' : 'GO';
       if (v !== last) {
         last = v;
         num.textContent = v;
         num.classList.remove('pop');
         void num.offsetWidth;
         num.classList.add('pop');
-        vibrate(v === 'GO!' ? 80 : 20);
-        if (v === 'GO!') sfx.go(); else sfx.beep();
+        vibrate(v === 'GO' ? 80 : 20);
+        if (v === 'GO') sfx.go(); else sfx.beep();
       }
     });
-    return h('div', { class: 'p-screen p-countdown', style: { '--c': g.color } }, h('div', { class: 'count-game' }, g.icon, ' ', g.name), num);
+    return h('div', { class: 'p-screen p-countdown', style: { '--c': g.color } }, h('div', { class: 'count-game' }, icon(g.icon), g.name), num);
   }
 
   // ------------------------------------------------------------ playing
@@ -289,16 +341,16 @@ export class PlayerApp {
 
     const scoreEl = h('div', { class: 'g-score' }, '0');
     const secsEl = h('div', { class: 'g-secs' });
-    const fill = h('div', { class: 'tb-fill' });
-    const total = Math.max(1, (d.duration || s.endsAt - net.now()));
+    const fillEl = h('div', { class: 'tb-fill' });
+    const total = Math.max(1, d.duration || s.endsAt - net.now());
     let lastSec = null;
     bag.raf(() => {
       const left = Math.max(0, s.endsAt - net.now());
-      fill.style.transform = `scaleX(${Math.min(1, left / total)})`;
+      fillEl.style.transform = `scaleX(${Math.min(1, left / total)})`;
       const sec = Math.ceil(left / 1000);
       if (sec !== lastSec) {
         lastSec = sec;
-        secsEl.textContent = `${sec}s`;
+        secsEl.textContent = sec;
         secsEl.classList.toggle('urgent', sec <= 5);
         if (sec <= 3 && sec > 0) sfx.tick();
       }
@@ -309,11 +361,11 @@ export class PlayerApp {
     const popLayer = h('div', { class: 'g-pops' });
     const screen = h('div', { class: `p-screen p-playing game-${d.gameId}`, style: { '--c': g.color } },
       h('div', { class: 'g-top' },
-        h('div', { class: 'g-title' }, g.icon, ' ', g.name),
-        mods.length ? h('div', { class: 'g-mods' }, mods.map((id) => MODS[id].icon)) : null,
+        h('div', { class: 'g-title' }, icon(g.icon), h('span', null, g.name)),
+        mods.length ? h('div', { class: 'g-mods' }, mods.map((id) => icon(MODS[id].icon))) : null,
         scoreEl,
         secsEl),
-      h('div', { class: 'timer-bar thin' }, fill),
+      h('div', { class: 'timer-bar thin' }, fillEl),
       area,
       popLayer,
       overlay);
@@ -326,7 +378,7 @@ export class PlayerApp {
       mods: new Set(mods),
       reversed: mods.includes('reversed'),
       color: g.color,
-      avatar: this.me.avatar,
+      character: this.me.character,
       now: net.now,
       endsAt: () => this.state.endsAt,
       bag,
@@ -350,18 +402,21 @@ export class PlayerApp {
         setTimeout(() => el.remove(), 1000);
       },
       finished: (title, sub) => {
-        overlay.replaceChildren(h('div', { class: 'go-card card' }, h('div', { class: 'go-title' }, title), sub ? h('div', { class: 'go-sub' }, sub) : null, h('div', { class: 'muted' }, 'Waiting for everyone else…')));
+        fill(overlay, h('div', { class: 'go-card card' },
+          char(this.me.character, { size: 84, mood: 'happy' }),
+          h('div', { class: 'go-title' }, title),
+          sub ? h('div', { class: 'go-sub' }, sub) : null,
+          h('div', { class: 'muted' }, 'Waiting for everyone else…')),
+        this.reactionBar());
         overlay.classList.remove('hidden');
       },
     };
-    const client = GAME_CLIENTS[d.gameId];
-    // Mount after the screen is in the DOM so games can measure their area.
     requestAnimationFrame(() => {
       try {
-        client.player(ctx);
+        GAME_CLIENTS[d.gameId].player(ctx);
       } catch (err) {
         console.error(err);
-        area.replaceChildren(h('p', { class: 'muted' }, 'Something went wrong loading this game.'));
+        fill(area, h('p', { class: 'muted' }, 'Something went wrong loading this game.'));
       }
     });
     if (s.game?.done) ctx.finished('Done!');
@@ -372,10 +427,10 @@ export class PlayerApp {
     const elim = !this.me.alive;
     return h('div', { class: 'p-screen p-center' },
       this.topBar(),
-      h('div', { class: 'emoji-xl bob' }, elim ? '👻' : '👀'),
-      h('h1', { class: 'p-title' }, elim ? "You're out!" : 'Spectating'),
-      h('p', { class: 'muted' }, elim ? 'Cheer on the survivors — watch the big screen!' : 'You will join in next round.'),
-      avatar(this.me.avatar, { size: 120, mood: elim ? 'sad' : undefined }));
+      char(this.me.character, { size: 130, mood: elim ? 'sad' : 'idle', class: 'idle-bob' }),
+      h('h1', { class: 'p-title' }, elim ? "You're out" : 'Spectating'),
+      h('p', { class: 'muted' }, elim ? 'Cheer on the survivors (or heckle them) from here.' : 'You will join in next round.'),
+      this.reactionBar());
   }
 
   // ------------------------------------------------------------ results
@@ -386,8 +441,8 @@ export class PlayerApp {
     const row = (d.rows || []).find((r) => r.id === this.me.id);
     if (!row) return this.renderSpectating();
     const pts = h('div', { class: 'big-points' }, '+0');
-    const top = row.rank === 1;
-    const mood = top ? 'win' : row.rank <= 3 ? 'happy' : row.rank === d.rows.length && d.rows.length > 2 ? 'sad' : undefined;
+    const top = row.rank === 1 && row.points > 0;
+    const mood = top ? 'happy' : row.points <= 0 || (row.rank === d.rows.length && d.rows.length > 2) ? 'sad' : 'idle';
     this.screenBag.timeout(() => {
       countUp(pts, 0, row.points, 800, '+');
       if (row.perfect) { sfx.ding(); fx.confetti(80); vibrate([40, 60, 40]); }
@@ -395,20 +450,21 @@ export class PlayerApp {
       else sfx.pop();
     }, 300);
     const events = (d.events || []).map((e) => {
-      if (e.type === 'heist' && e.to === this.me.id) return h('div', { class: 'event-banner heist' }, `💰 You stole ${e.amount} points!`);
-      if (e.type === 'heist' && e.from === this.me.id) return h('div', { class: 'event-banner heist' }, `😱 ${this.p(e.to).name} stole ${e.amount} of your points!`);
+      if (e.type === 'heist' && e.to === this.me.id) return h('div', { class: 'event-banner' }, icon('bag'), `You stole ${e.amount} points!`);
+      if (e.type === 'heist' && e.from === this.me.id) return h('div', { class: 'event-banner' }, icon('bag'), `${this.p(e.to).name} stole ${e.amount} of your points`);
       return null;
     });
     return h('div', { class: 'p-screen p-center p-results', style: { '--c': g.color } },
       this.topBar(),
-      h('div', { class: 'eyebrow' }, `${g.icon} ${g.name}`),
-      h('h1', { class: 'p-title' }, top ? 'You won the round!' : `You came ${ordinal(row.rank)}`),
-      avatar(this.me.avatar, { size: 130, mood, class: top ? 'bounce' : '' }),
+      h('div', { class: 'eyebrow' }, icon(g.icon), g.name),
+      h('h1', { class: 'p-title' }, top ? 'You won the round!' : row.points <= 0 ? 'No points this time' : `You came ${ordinal(row.rank)}`),
+      char(this.me.character, { size: 130, mood, class: top ? 'hop' : '' }),
       h('div', { class: 'res-label big' }, row.label),
-      row.perfect ? h('div', { class: 'perfect-badge big' }, '✨ PERFECT! +25 bonus') : null,
+      row.perfect ? h('div', { class: 'perfect-badge big' }, icon('sparkle'), 'Perfect · +25 bonus') : null,
       pts,
       row.tags?.length ? h('div', { class: 'res-tags' }, row.tags.map((t) => h('span', { class: 'tag' }, t))) : null,
-      events);
+      events,
+      this.reactionBar());
   }
 
   // ------------------------------------------------------------ leaderboard
@@ -434,23 +490,24 @@ export class PlayerApp {
     if (d.teams && this.me.team != null) {
       const t = d.teams.find((x) => x.id === this.me.team);
       const T = TEAMS[this.me.team];
-      if (t) team = h('div', { class: 'p-teamcard', style: { '--team': T.color } }, `${T.icon} ${T.name}: ${ordinal(t.rank)} place (${t.score} avg)`);
+      if (t) team = h('div', { class: 'p-teamcard', style: { '--team': T.color } }, `${T.name}: ${ordinal(t.rank)} place · ${t.score} avg`);
     }
     let status = null;
     if (elimMode) {
-      if (out) status = h('div', { class: 'elim-stamp' }, '💀 ELIMINATED');
-      else if (mine.alive) status = h('div', { class: 'safe-stamp' }, '✅ SAFE!');
+      if (out) status = h('div', { class: 'stamp red' }, icon('skull'), 'Eliminated');
+      else if (mine.alive) status = h('div', { class: 'stamp green' }, icon('check'), 'Safe');
     }
     return h('div', { class: 'p-screen p-center p-standings' },
       this.topBar(),
-      h('div', { class: 'eyebrow' }, `Standings · Round ${s.round}/${s.totalRounds}`),
-      avatar(this.me.avatar, { size: 110, mood: out ? 'sad' : mine.rank === 1 ? 'win' : undefined }),
+      h('div', { class: 'eyebrow' }, `Standings · Round ${s.round} of ${s.totalRounds}`),
+      char(this.me.character, { size: 110, mood: out ? 'sad' : mine.rank === 1 ? 'happy' : 'idle' }),
       rankEl,
-      diff !== 0 ? h('div', { class: `rank-change ${diff > 0 ? 'up' : 'down'}` }, diff > 0 ? `▲ up ${diff}` : `▼ down ${-diff}`) : null,
+      diff !== 0 ? h('div', { class: `rank-change ${diff > 0 ? 'up' : 'down'}` }, icon(diff > 0 ? 'up' : 'down'), diff > 0 ? `Up ${diff}` : `Down ${-diff}`) : null,
       scoreEl,
       h('div', { class: 'muted' }, 'points'),
       status,
-      team);
+      team,
+      this.reactionBar());
   }
 
   // ------------------------------------------------------------ final
@@ -465,15 +522,20 @@ export class PlayerApp {
       if (champ || teamWin) { fx.confetti(200); sfx.fanfare(); vibrate([60, 60, 60, 60, 200]); }
       else if (rank <= 3) { fx.confetti(80); sfx.great(); }
     }, 4300);
-    const title = champ ? '🏆 CHAMPION!' : rank === 2 ? '🥈 Second place!' : rank === 3 ? '🥉 Third place!' : `You finished ${ordinal(rank)}`;
+    const title = champ ? 'Champion!' : rank === 2 ? 'Second place' : rank === 3 ? 'Third place' : `You finished ${ordinal(rank)}`;
+    const myAwards = (d.awards || []).filter((a) => a.player === this.me.id);
     return h('div', { class: 'p-screen p-center p-final' },
       this.topBar(),
       h('div', { class: 'eyebrow' }, 'Final results'),
-      avatar(this.me.avatar, { size: 150, mood: rank <= 3 ? 'win' : 'happy', crown: champ, class: champ ? 'bounce' : '' }),
+      char(this.me.character, { size: 150, mood: rank <= 3 ? 'happy' : 'idle', crown: champ, class: champ ? 'hop' : '' }),
       h('h1', { class: 'p-title' }, title),
-      teamWin ? h('div', { class: 'p-teamcard', style: { '--team': TEAMS[this.me.team].color } }, `${TEAMS[this.me.team].icon} Your team won!`) : null,
-      h('div', { class: 'big-score' }, `${mine?.score ?? 0}`),
+      teamWin ? h('div', { class: 'p-teamcard', style: { '--team': TEAMS[this.me.team].color } }, `${TEAMS[this.me.team].name} won!`) : null,
+      h('div', { class: 'big-score' }, `${(mine?.score ?? 0).toLocaleString()}`),
       h('div', { class: 'muted' }, 'points'),
-      h('p', { class: 'muted pulse' }, 'Thanks for playing! The host can start another game.'));
+      myAwards.length
+        ? h('div', { class: 'my-awards' }, myAwards.map((a) => h('div', { class: 'award-card small' }, h('div', { class: 'aw-icon' }, icon(a.icon)), h('div', { class: 'aw-text' }, h('div', { class: 'aw-title' }, a.title), h('div', { class: 'aw-desc' }, a.text)))))
+        : null,
+      h('p', { class: 'muted' }, 'Thanks for playing. The host can start another game.'),
+      this.reactionBar());
   }
 }

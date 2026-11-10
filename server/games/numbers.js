@@ -73,7 +73,7 @@ export default function create(api) {
     },
     progress() {
       const out = {};
-      for (const [id, s] of st) out[id] = { v: s.score, label: `${s.k} solved${s.streak >= 3 ? ` · 🔥${s.streak}` : ''}` };
+      for (const [id, s] of st) out[id] = { v: s.score, label: `${s.k} solved${s.streak >= 3 ? ` · streak ${s.streak}` : ''}` };
       return out;
     },
     finish() {

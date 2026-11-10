@@ -1,6 +1,6 @@
 import { GAMES, GAME_IDS } from '../shared/games.js';
-import { MODES, MODS, TEAMS, ROUND_OPTIONS, MAX_PLAYERS } from '../shared/config.js';
-import { sanitizeAvatar } from '../shared/avatar.js';
+import { MODES, MODS, TEAMS, ROUND_OPTIONS, MAX_PLAYERS, REACTIONS } from '../shared/config.js';
+import { SLOTS, isSlot } from '../shared/characters.js';
 import { SERVER_GAMES } from './games/index.js';
 import { makeRng, randSeed, randomToken, shuffle, pick } from './util.js';
 import { scoreRound, assignRanks } from './scoring.js';
@@ -21,6 +21,8 @@ const T = {
 const SPIN_MS = 4600;
 const LOBBY_DROP_MS = 90_000; // remove players who vanish from the lobby
 const PROGRESS_MS = 300;
+const REACT_GAP_MS = 600;
+const freshStats = () => ({ roundWins: 0, perfects: 0, bestRound: 0, bestClimb: 0, reactions: 0, tomatoes: 0 });
 const TICK_MS = 50;
 
 let nextPlayerId = 1;
@@ -73,6 +75,7 @@ export class Room {
       p.team = null;
       p.ready = false;
       p.lastPoints = 0;
+      p.stats = freshStats();
     }
   }
 
@@ -88,7 +91,7 @@ export class Room {
     return {
       id: p.id,
       name: p.name,
-      avatar: p.avatar,
+      character: p.character,
       connected: p.connected,
       score: p.score,
       alive: p.alive,
@@ -188,7 +191,22 @@ export class Room {
     this.touch();
   }
 
-  addPlayer(socket, name, avatar) {
+  takenSlots(exceptId) {
+    return new Set(this.activePlayers().filter((p) => p.id !== exceptId).map((p) => p.character));
+  }
+
+  freeSlot(preferred) {
+    const taken = this.takenSlots();
+    if (isSlot(preferred) && !taken.has(preferred)) return preferred;
+    const free = SLOTS.filter((x) => !taken.has(x.slot));
+    // Prefer an unused character over a second colourway of a used one.
+    const usedChars = new Set([...taken].map((t) => t.split('-')[0]));
+    const fresh = free.filter((x) => !usedChars.has(x.id));
+    const pool = fresh.length ? fresh : free;
+    return pool[Math.floor(Math.random() * pool.length)]?.slot || SLOTS[0].slot;
+  }
+
+  addPlayer(socket, name, character) {
     if (this.phase !== 'lobby') return { ok: false, error: 'This party has already started. Wait for the next game!' };
     if (this.activePlayers().length >= MAX_PLAYERS) return { ok: false, error: `This party is full (${MAX_PLAYERS} players max).` };
     let clean = cleanName(name);
@@ -203,7 +221,9 @@ export class Room {
       id: `p${nextPlayerId++}`,
       token: randomToken(),
       name: clean,
-      avatar: sanitizeAvatar(avatar),
+      character: this.freeSlot(character),
+      stats: freshStats(),
+      lastReact: 0,
       socketId: socket.id,
       connected: true,
       score: 0,
@@ -284,11 +304,24 @@ export class Room {
     }
   }
 
-  setAvatar(pid, avatar) {
+  setCharacter(pid, slot) {
     const p = this.players.get(pid);
-    if (!p) return;
-    p.avatar = sanitizeAvatar(avatar);
+    if (!p || !isSlot(slot)) return { ok: false, error: 'Unknown character' };
+    if (this.takenSlots(pid).has(slot)) return { ok: false, error: 'Someone already picked that one!' };
+    p.character = slot;
     this.emitRoster();
+    return { ok: true };
+  }
+
+  react(pid, r) {
+    const p = this.players.get(pid);
+    if (!p || p.left || !REACTIONS.includes(r)) return;
+    const now = Date.now();
+    if (now - p.lastReact < REACT_GAP_MS) return;
+    p.lastReact = now;
+    p.stats.reactions++;
+    if (r === 'tomato') p.stats.tomatoes++;
+    this.toHost('react', { id: pid, r });
   }
 
   updateSettings(input) {
@@ -361,7 +394,9 @@ export class Room {
   // Shuffle-bag: every enabled game is played once before any repeats, and
   // the same game never comes up twice in a row.
   pickGame() {
-    const pool = this.settings.games;
+    const n = this.participants().length;
+    let pool = this.settings.games.filter((g) => (GAMES[g].minPlayers || 1) <= n);
+    if (!pool.length) pool = GAME_IDS.filter((g) => (GAMES[g].minPlayers || 1) <= n);
     const minCount = Math.min(...pool.map((g) => this.playCounts[g] || 0));
     let cands = pool.filter((g) => (this.playCounts[g] || 0) === minCount);
     const last = this.recentGames[this.recentGames.length - 1];
@@ -479,6 +514,11 @@ export class Room {
       toPlayers: (msg) => { for (const id of pids) room.toPlayer(id, 'g:msg', msg); },
       toHost: (msg) => room.toHost('g:host', msg),
       done: (pid) => { c.done.add(pid); room.checkAllDone(); },
+      endNow: () => room.endSoon(),
+      info: (pid) => {
+        const p = room.players.get(pid);
+        return { team: p?.team ?? null, score: p?.score ?? 0, name: p?.name };
+      },
     };
     c.inst = factory(api);
     this.stopLoops();
@@ -599,6 +639,9 @@ export class Room {
       const p = this.players.get(row.id);
       p.score += row.points;
       p.lastPoints = row.points;
+      if (row.rank === 1 && row.points > 0) p.stats.roundWins++;
+      if (row.perfect && row.raw > 0) p.stats.perfects++;
+      p.stats.bestRound = Math.max(p.stats.bestRound, row.points);
     }
 
     const events = [];
@@ -649,6 +692,8 @@ export class Room {
     const standings = this.standings();
     for (const s of standings) {
       s.prevRank = this.prevRanks.get(s.id) ?? s.rank;
+      const p = this.players.get(s.id);
+      if (p) p.stats.bestClimb = Math.max(p.stats.bestClimb, s.prevRank - s.rank);
     }
 
     const perfect = (this.lastResults || []).filter((r) => r.perfect && r.raw > 0).map((r) => r.id);
@@ -704,7 +749,31 @@ export class Room {
       champion: standings[0]?.id ?? null,
       winnerTeam: teams?.[0]?.id ?? null,
       close: this.settings.mode === 'elimination' ? false : close,
+      awards: this.awards(),
     });
+  }
+
+  awards() {
+    const list = this.activePlayers();
+    const best = (key, min) => {
+      let top = null;
+      for (const p of list) if (p.stats[key] >= min && (!top || p.stats[key] > top.stats[key])) top = p;
+      return top;
+    };
+    const defs = [
+      { key: 'roundWins', min: 2, id: 'rounds', title: 'Round Machine', icon: 'trophy', text: (v) => `Won ${v} rounds` },
+      { key: 'perfects', min: 1, id: 'perfect', title: 'Flawless', icon: 'sparkle', text: (v) => `${v} perfect ${v === 1 ? 'round' : 'rounds'}` },
+      { key: 'bestClimb', min: 2, id: 'comeback', title: 'Comeback Kid', icon: 'rise', text: (v) => `Climbed ${v} places in one round` },
+      { key: 'bestRound', min: 1, id: 'bigscore', title: 'Big Score', icon: 'starFull', text: (v) => `${v} points in a single round` },
+      { key: 'tomatoes', min: 3, id: 'tomato', title: 'Tomato Thrower', icon: 'fire', text: (v) => `Threw ${v} tomatoes` },
+      { key: 'reactions', min: 8, id: 'hype', title: 'Hype Machine', icon: 'megaphone', text: (v) => `Sent ${v} reactions` },
+    ];
+    const out = [];
+    for (const d of defs) {
+      const p = best(d.key, d.min);
+      if (p) out.push({ id: d.id, title: d.title, icon: d.icon, player: p.id, text: d.text(p.stats[d.key]) });
+    }
+    return out;
   }
 
   // ---------------------------------------------------------------- host

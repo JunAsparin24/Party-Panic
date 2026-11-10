@@ -1,5 +1,5 @@
 // Word Scramble — phone controller.
-import { h, onTap } from '../ui.js';
+import { h, icon, onTap } from '../ui.js';
 import { demoPhone } from './common.js';
 
 export default {
@@ -14,8 +14,8 @@ export default {
     const info = h('div', { class: 'ws-info' });
     const slots = h('div', { class: 'ws-slots' });
     const tiles = h('div', { class: 'ws-tiles' });
-    const clearBtn = h('button', { class: 'btn btn-white btn-sm' }, '↺ Clear');
-    const skipBtn = h('button', { class: 'btn btn-orange btn-sm' }, '⏭ Skip');
+    const clearBtn = h('button', { class: 'btn btn-light btn-sm' }, icon('refresh'), 'Clear');
+    const skipBtn = h('button', { class: 'btn btn-secondary btn-sm' }, icon('skip'), 'Skip');
     const lockEl = h('div', { class: 'ws-lock hidden' });
     root.append(h('div', { class: 'ws-wrap' }, info, slots, tiles, h('div', { class: 'ws-actions' }, clearBtn, skipBtn), lockEl));
 

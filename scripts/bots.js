@@ -41,7 +41,7 @@ class Bot {
   async join(code) {
     this.sock = connect();
     this.wire();
-    const r = await request(this.sock, 'player:join', { code, name: this.name, avatar: { skin: this.i % 6 } });
+    const r = await request(this.sock, 'player:join', { code, name: this.name, character: 'dee-0' });
     if (!r.ok) throw new Error(`join failed: ${r.error}`);
     this.token = r.token;
     this.code = code;
@@ -71,6 +71,7 @@ class Bot {
     this.clear();
     this.state = s;
     if (s.phase === 'tutorial' && s.me.alive) this.later(rand(100, 900) / SPEED * 3, () => this.sock.emit('player:ready'));
+    if (s.phase === 'results' && Math.random() < 0.5) this.sock.emit('player:react', { r: ['lol', 'tomato', 'fire'][this.i % 3] });
     if (s.phase === 'playing' && s.game?.init) this.play(s.data.gameId, s.game.init);
   }
   play(game, init) {
@@ -88,6 +89,7 @@ class Bot {
       case 'double': return this.double(init);
       case 'maze': this.mazeState = { ...init }; return this.maze();
       case 'redlight': return this.redlight();
+      case 'tug': return this.tug();
       default: return now;
     }
   }
@@ -169,6 +171,10 @@ class Bot {
     };
     tick();
   }
+  tug() {
+    const tick = () => { this.send({ type: 'pull' }); this.later(rand(60, 140), tick); };
+    tick();
+  }
   redlight() {
     const tick = () => { this.send({ type: 'tap' }); this.later(rand(70, 110), tick); };
     tick();
@@ -190,6 +196,8 @@ async function runTournament(mode, players, rounds) {
     if (s.phase === 'final') finalState = s;
   });
   host.on('progress', () => progressEvents++);
+  let reacts = 0;
+  host.on('react', () => reacts++);
 
   // Extra player that gets kicked from the lobby.
   const kickMe = new Bot(99);
@@ -237,6 +245,11 @@ async function runTournament(mode, players, rounds) {
   console.log(`host progress events: ${progressEvents}, inputs sent: ${bots.reduce((a, b) => a + b.stats.inputs, 0)}`);
 
   const problems = [];
+  const chars = finalState.players.map((p) => p.character);
+  if (new Set(chars).size !== chars.length) problems.push('duplicate characters');
+  if (!Array.isArray(finalState.data.awards)) problems.push('no awards list');
+  console.log(`awards: ${(finalState.data.awards || []).map((a) => `${a.title}=${named(a.player)}`).join(', ')}`);
+  if (reacts === 0) problems.push('host never received reactions');
   if (mode !== 'elimination' && games.length !== rounds) problems.push(`expected ${rounds} rounds, got ${games.length}`);
   if (st.length !== players - 1) problems.push(`expected ${players - 1} in standings (1 left), got ${st.length}`);
   if (!st[0] || st[0].score <= 0) problems.push('winner has no points');

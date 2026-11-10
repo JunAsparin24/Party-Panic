@@ -31,7 +31,13 @@ Notes:
 
 ## What's in the box
 
-**10 minigames:** Perfect Timing, Memory Meltdown, Spot the Difference, Number Rush, Tower Trouble, Word Scramble, Catch or Crash, Double or Nothing, Maze Dash, Red Light Panic.
+**11 minigames:** Perfect Timing, Memory Meltdown, Spot the Difference, Number Rush, Tower Trouble, Word Scramble, Catch or Crash, Double or Nothing, Maze Dash, Red Light Panic, and Tug of War (a team game for 2+ players).
+
+**Characters:** 12 hand-drawn characters, each in two colourways. Every player picks a unique one on their phone, like a Jackbox lobby.
+
+**Reactions and awards:** while waiting, players can fire reactions at the big screen (including throwing tomatoes). The final screen hands out awards such as Round Machine, Flawless, Comeback Kid and Tomato Thrower.
+
+**Big-screen views:** Red Light Panic shows every runner on a race track, Tower Trouble shows everyone's tower side by side, and Tug of War shows the rope moving live. Other games show a live race board.
 
 **4 modes:**
 
@@ -57,16 +63,19 @@ The host picks the mode, 5/10/15/20 rounds, and which minigames are in the mix. 
 server/
   index.js        Express + Socket.IO, rooms, rate limiting, QR codes
   room.js         Tournament state machine (lobby → wheel → tutorial → countdown → playing → results → standings → final)
-  scoring.js      Placement points and multipliers
+  scoring.js      Placement points and multipliers (awards live in room.js)
   games/*.js      One file per minigame (server rules)
 shared/
   games.js        Minigame names, colours, durations, tutorials
   config.js       Modes, teams, chaos modifiers
-  avatar.js       Avatar options and SVG renderer
+  characters.js   The 12-character cast (SVG)
+  spot.js         Drawn objects for Spot the Difference
 public/
   js/host.js      Big-screen views
   js/player.js    Phone views
-  js/games/*.js   One file per minigame (phone controls, host extras, tutorial demo)
+  js/games/*.js   One file per minigame (phone controls, big-screen view, tutorial demo)
+  js/icons.js     The icon set used everywhere instead of emoji
+  js/art.js       Illustrated items: coins, bombs, chests, reaction stickers
 scripts/bots.js   Load test
 ```
 
@@ -74,7 +83,7 @@ scripts/bots.js   Load test
 
 1. Add its metadata to `shared/games.js`.
 2. Create `server/games/<id>.js` exporting `create(api)`, which returns `{ playerInit, onInput, progress, finish }` (plus optional `tick` and `hostInit`). Register it in `server/games/index.js`.
-3. Create `public/js/games/<id>.js` exporting `{ player(ctx), demo?(), host?(ctx) }`. Register it in `public/js/games/index.js`.
+3. Create `public/js/games/<id>.js` exporting `{ player(ctx), demo?(), host?(ctx) }`. `host` can return `{ full: true, progress(p), msg(m) }` to replace the default race board with a custom big-screen view. Register it in `public/js/games/index.js`.
 
 It then appears automatically in the lobby, on the wheel and in the tutorials.
 

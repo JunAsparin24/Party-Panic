@@ -84,7 +84,7 @@ export default function create(api) {
       const out = {};
       for (const [id, s] of st) {
         out[id] = s.place
-          ? { v: 1000 - s.place, f: 1, label: `🏁 #${s.place}` }
+          ? { v: 1000 - s.place, f: 1, label: `Finished #${s.place}` }
           : { v: s.pos, f: s.pos / TRACK, label: `${s.pos}m` };
       }
       return out;

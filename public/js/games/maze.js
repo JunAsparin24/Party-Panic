@@ -1,6 +1,6 @@
 // Maze Dash — phone controller (canvas + swipe + D-pad).
-import { h, avatarUrl } from '../ui.js';
-import { fitCanvas, loadImage, demoPhone, EMOJI_FONT } from './common.js';
+import { h, icon, charUrl } from '../ui.js';
+import { fitCanvas, loadImage, demoPhone } from './common.js';
 
 const DIRS = {
   U: { bit: 1, dx: 0, dy: -1, back: 'D' },
@@ -54,11 +54,11 @@ export default {
       bag.add(stop);
       return b;
     };
-    const pad = h('div', { class: 'mz-pad' }, mkBtn('U', '▲'), mkBtn('L', '◀'), mkBtn('R', '▶'), mkBtn('D', '▼'));
+    const pad = h('div', { class: 'mz-pad' }, mkBtn('U', icon('up')), mkBtn('L', icon('left')), mkBtn('R', icon('right')), mkBtn('D', icon('down')));
     const info = h('div', { class: 'mz-info' });
     root.append(info, holder, pad);
     const { canvas, ctx: g, size } = fitCanvas(holder, bag);
-    const face = loadImage(avatarUrl(ctx.avatar, { bg: true }));
+    const face = loadImage(charUrl(ctx.character));
 
     const score = () => {
       const d0 = dist[0] || 1;
@@ -66,7 +66,7 @@ export default {
       return cleared * 100 + Math.max(0, Math.floor(99 * (1 - d / d0)));
     };
     const renderInfo = () => {
-      info.textContent = `Maze ${maze.level + 1} · ${maze.w}×${maze.h}${ctx.reversed ? ' · 🔄 reversed!' : ''}`;
+      info.textContent = `Maze ${maze.level + 1} · ${maze.w}×${maze.h}${ctx.reversed ? ' · reversed controls' : ''}`;
       ctx.setScore(score());
     };
     renderInfo();
@@ -136,11 +136,27 @@ export default {
       for (const p of trail) g.fillRect(ox + p.x * cs + cs * 0.25, oy + p.y * cs + cs * 0.25, cs * 0.5, cs * 0.5);
 
       // exit
-      g.textAlign = 'center';
-      g.textBaseline = 'middle';
-      g.font = `${cs * 0.7}px ${EMOJI_FONT}`;
-      g.fillStyle = '#000';
-      g.fillText('🏁', ox + (maze.w - 0.5) * cs, oy + (maze.h - 0.5) * cs + Math.sin(t / 200) * 2);
+      // exit: gold tile with a waving flag
+      const ex = ox + (maze.w - 1) * cs;
+      const ey = oy + (maze.h - 1) * cs;
+      g.fillStyle = '#ffe39a';
+      g.fillRect(ex, ey, cs, cs);
+      const wave = Math.sin(t / 160) * cs * 0.06;
+      g.strokeStyle = '#1b1530';
+      g.lineWidth = Math.max(2, cs * 0.07);
+      g.beginPath();
+      g.moveTo(ex + cs * 0.32, ey + cs * 0.85);
+      g.lineTo(ex + cs * 0.32, ey + cs * 0.15);
+      g.stroke();
+      g.beginPath();
+      g.moveTo(ex + cs * 0.34, ey + cs * 0.17);
+      g.quadraticCurveTo(ex + cs * 0.55, ey + cs * 0.22 + wave, ex + cs * 0.78, ey + cs * 0.3);
+      g.lineTo(ex + cs * 0.34, ey + cs * 0.5);
+      g.closePath();
+      g.fillStyle = '#ff5a3c';
+      g.fill();
+      g.lineWidth = Math.max(1.5, cs * 0.05);
+      g.stroke();
 
       // walls
       g.strokeStyle = '#1d1140';
@@ -192,7 +208,7 @@ export default {
         waitingLevel = false;
         sfx.levelUp();
         fx.confetti(40);
-        ctx.popup('Maze cleared! 🏁', 'good');
+        ctx.popup('Maze cleared', 'good');
         ctx.vibrate([30, 40, 30]);
         renderInfo();
       } else if (m.type === 'pos' && m.level === maze.level) {
@@ -204,6 +220,6 @@ export default {
   },
 
   demo() {
-    return demoPhone(h('div', { class: 'demo-maze' }, h('span', { class: 'dot' }), h('span', { class: 'flag' }, '🏁')));
+    return demoPhone(h('div', { class: 'demo-maze' }, h('span', { class: 'dot' }), h('span', { class: 'flag' })));
   },
 };

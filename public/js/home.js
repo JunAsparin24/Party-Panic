@@ -1,46 +1,35 @@
-// Animated homepage with Create Party / Join Party.
-import { h, show, avatar, Bag } from './ui.js';
-import { randomAvatar } from '/shared/avatar.js';
+// Homepage: logo, a parade of the cast, Host / Join.
+import { h, show, char, icon, Bag } from './ui.js';
+import { SLOTS } from '/shared/characters.js';
+import { GAMES } from '/shared/games.js';
 import { prefs } from './net.js';
 import { sfx } from './sound.js';
-import { GAMES } from '/shared/games.js';
 
 function logo() {
   const word = (text, cls) =>
     h('span', { class: `logo-word ${cls}` },
-      [...text].map((ch, i) => h('span', { class: 'logo-letter', style: { animationDelay: `${i * 0.08}s` } }, ch)));
-  return h('h1', { class: 'logo' }, word('PARTY', 'w1'), word('PANIC', 'w2'));
+      [...text].map((ch, i) => h('span', { class: 'logo-letter', style: { animationDelay: `${0.1 + i * 0.06}s` } }, ch)));
+  return h('h1', { class: 'logo', 'aria-label': 'Party Panic' }, word('PARTY', 'w1'), word('PANIC', 'w2'));
 }
 
 export function renderHome({ onCreate, onJoin, prefillCode }) {
   const bag = new Bag();
-  let myAvatar = prefs.get('avatar', null) || randomAvatar();
-  prefs.set('avatar', myAvatar);
 
-  const crowd = h('div', { class: 'home-crowd' },
-    Array.from({ length: 5 }, (_, i) =>
-      avatar(i === 2 ? myAvatar : randomAvatar(), { class: 'dance', size: i === 2 ? 92 : 70 })
-    ).map((el, i) => { el.style.animationDelay = `${i * 0.15}s`; return el; })
-  );
+  // One colourway of each character, shuffled
+  const cast = SLOTS.filter((s) => s.v === 0).sort(() => Math.random() - 0.5).slice(0, 7);
+  const parade = h('div', { class: 'home-cast' },
+    cast.map((s, i) => char(s.slot, { size: i === 3 ? 104 : 76, class: 'hop', mood: i === 3 ? 'happy' : 'idle' })));
+  [...parade.children].forEach((el, i) => { el.style.animationDelay = `${i * 0.12}s`; });
 
-  const games = h('div', { class: 'home-games' },
-    Object.values(GAMES).map((g, i) =>
-      h('span', { class: 'game-chip', style: { '--c': g.color, animationDelay: `${i * 0.06}s` } }, g.icon, ' ', g.name)
-    )
-  );
-
-  // --- main panel
-  const createBtn = h('button', { class: 'btn btn-pink btn-xl' }, '🎉 Create Party');
-  const joinBtn = h('button', { class: 'btn btn-yellow btn-xl' }, '📱 Join Party');
-  const mainPanel = h('div', { class: 'home-actions' },
+  const createBtn = h('button', { class: 'btn btn-primary btn-xl' }, icon('tv'), 'Host a party');
+  const joinBtn = h('button', { class: 'btn btn-secondary btn-xl' }, icon('phone'), 'Join a party');
+  const actions = h('div', { class: 'home-actions' },
     createBtn,
-    h('div', { class: 'hint' }, 'Host on a laptop or TV — everyone plays on their phone'),
-    joinBtn
-  );
+    h('p', { class: 'hint' }, 'Hosting? Open this on a laptop or TV. Everyone else plays on their phone.'),
+    joinBtn);
 
-  // --- join panel
   const codeInput = h('input', {
-    class: 'input code-input', inputmode: 'numeric', maxlength: '6', placeholder: '000000',
+    class: 'input code-input', inputmode: 'numeric', maxlength: '6', placeholder: '······',
     autocomplete: 'off', 'aria-label': 'Room code', pattern: '[0-9]*',
   });
   const nameInput = h('input', {
@@ -48,27 +37,26 @@ export function renderHome({ onCreate, onJoin, prefillCode }) {
     'aria-label': 'Your name', enterkeyhint: 'go',
   });
   nameInput.value = prefs.get('name', '');
-  const err = h('div', { class: 'form-error' });
-  const goBtn = h('button', { class: 'btn btn-green btn-lg', type: 'submit' }, "Let's go!");
-  const back = h('button', { class: 'btn-link', type: 'button' }, '← Back');
-  const joinForm = h('form', { class: 'home-join card hidden' },
+  const err = h('div', { class: 'form-error', role: 'alert' });
+  const goBtn = h('button', { class: 'btn btn-primary btn-lg', type: 'submit' }, 'Join', icon('right'));
+  const back = h('button', { class: 'btn-link', type: 'button' }, icon('back'), 'Back');
+  const form = h('form', { class: 'home-join card hidden' },
     h('label', { class: 'field-label' }, 'Room code'),
     codeInput,
     h('label', { class: 'field-label' }, 'Your name'),
     nameInput,
     err,
     goBtn,
-    back
-  );
+    back);
 
   const showJoin = () => {
-    mainPanel.classList.add('hidden');
-    joinForm.classList.remove('hidden');
+    actions.classList.add('hidden');
+    form.classList.remove('hidden');
     (codeInput.value.length === 6 ? nameInput : codeInput).focus();
   };
   const showMain = () => {
-    joinForm.classList.add('hidden');
-    mainPanel.classList.remove('hidden');
+    form.classList.add('hidden');
+    actions.classList.remove('hidden');
   };
 
   codeInput.addEventListener('input', () => {
@@ -79,24 +67,20 @@ export function renderHome({ onCreate, onJoin, prefillCode }) {
   createBtn.addEventListener('click', async () => {
     sfx.click();
     createBtn.disabled = true;
-    createBtn.textContent = 'Creating…';
     await onCreate();
     createBtn.disabled = false;
-    createBtn.textContent = '🎉 Create Party';
   });
   joinBtn.addEventListener('click', () => { sfx.click(); showJoin(); });
   back.addEventListener('click', () => { sfx.click(); showMain(); });
-  joinForm.addEventListener('submit', async (e) => {
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const code = codeInput.value.trim();
     const name = nameInput.value.trim();
-    if (code.length !== 6) { err.textContent = 'Room codes have 6 digits'; codeInput.focus(); return; }
-    if (!name) { err.textContent = 'Pick a name first!'; nameInput.focus(); return; }
+    if (code.length !== 6) { err.textContent = 'Room codes have 6 digits.'; codeInput.focus(); return; }
+    if (!name) { err.textContent = 'Pick a name first.'; nameInput.focus(); return; }
     goBtn.disabled = true;
-    goBtn.textContent = 'Joining…';
-    const problem = await onJoin({ code, name, avatar: myAvatar });
+    const problem = await onJoin({ code, name, character: prefs.get('character', null) });
     goBtn.disabled = false;
-    goBtn.textContent = "Let's go!";
     if (problem) { err.textContent = problem; sfx.bad(); }
   });
 
@@ -105,15 +89,16 @@ export function renderHome({ onCreate, onJoin, prefillCode }) {
     showJoin();
   }
 
+  const games = h('div', { class: 'home-games' },
+    Object.values(GAMES).map((g) => h('span', { class: 'game-chip', style: { '--c': g.color } }, icon(g.icon), g.name)));
+
   const screen = h('div', { class: 'home' },
     h('div', { class: 'home-inner' },
       logo(),
-      h('p', { class: 'tagline' }, '10 chaotic minigames · up to 20 players · zero chill'),
-      crowd,
-      mainPanel,
-      joinForm,
-      games
-    )
-  );
+      h('p', { class: 'tagline' }, `${Object.keys(GAMES).length} minigames · up to 20 players · one very loud room`),
+      parade,
+      actions,
+      form,
+      games));
   show(screen, () => bag.run());
 }

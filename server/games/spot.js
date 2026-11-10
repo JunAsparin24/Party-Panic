@@ -1,40 +1,33 @@
-// Spot the Difference: find the single odd symbol in a grid.
+// Spot the Difference: find the single odd drawing in a grid.
 import { pick } from '../util.js';
+import { OBJECTS, OBJECT_IDS } from '../../shared/spot.js';
 
-const EASY = [['🍎', '🍏'], ['🐶', '🐱'], ['⚽', '🏀'], ['🌞', '🌝'], ['❤️', '💙'], ['🚗', '🚕'], ['🍩', '🍪'], ['🐸', '🐢']];
-const HARD = [
-  ['😀', '😃'], ['😊', '🙂'], ['🍊', '🍑'], ['🌲', '🌳'], ['🐟', '🐠'], ['💜', '💙'], ['🕐', '🕜'],
-  ['🌑', '🌚'], ['😐', '😑'], ['🐭', '🐹'], ['🌕', '🌖'], ['🔶', '🔸'], ['🎾', '🥎'], ['😺', '😸'],
-  ['📕', '📙'], ['🟠', '🟡'], ['🐻', '🧸'], ['🍋', '🍈'],
-];
-const ASYM = ['🦒', '🐌', '🦖', '🚀', '🔑', '🎸', '🦆', '🐎', '🦜', '🛴', '⛵', '🐢', '🦕', '🍌', '🦩', '🐘'];
-const SIZES = [3, 3, 4, 4, 5, 5, 5, 6, 6, 6, 7];
+const SIZES = [3, 3, 4, 4, 4, 5, 5, 5, 6, 6, 6, 7];
+
+function makeDiff(rng, id, level) {
+  const o = OBJECTS[id];
+  const hard = level >= 4;
+  const types = ['color', 'missing', 'rotate'];
+  if (o.asym) types.push('mirror');
+  const type = pick(types, rng);
+  if (type === 'color') return { type, part: pick(Object.keys(o.colors), rng), strength: hard ? 'subtle' : 'strong' };
+  if (type === 'missing') return { type, part: pick(o.removable, rng) };
+  if (type === 'rotate') return { type, angle: level < 3 ? 180 : level < 6 ? pick([90, -90], rng) : pick([25, -25, 35, -35], rng) };
+  return { type };
+}
 
 export default function create(api) {
   const puzzles = [];
+  let lastObj = null;
   function puzzle(level) {
     if (puzzles[level]) return puzzles[level];
     const rng = api.rng;
     const size = SIZES[Math.min(level, SIZES.length - 1)];
-    const cells = size * size;
-    const oddIdx = Math.floor(rng() * cells);
-    let p;
-    const roll = rng();
-    if (level < 2) {
-      const [a, b] = pick(EASY, rng);
-      p = { type: 'pair', base: a, odd: b };
-    } else if (roll < 0.45) {
-      const [a, b] = pick(HARD, rng);
-      p = rng() < 0.5 ? { type: 'pair', base: a, odd: b } : { type: 'pair', base: b, odd: a };
-    } else if (roll < 0.75) {
-      const e = pick(ASYM, rng);
-      const angle = level < 4 ? 180 : level < 7 ? 90 : 40;
-      p = { type: 'rotate', base: e, odd: e, angle };
-    } else {
-      const e = pick(ASYM, rng);
-      p = { type: 'mirror', base: e, odd: e };
-    }
-    puzzles[level] = { level, size, oddIdx, ...p };
+    let obj;
+    do obj = pick(OBJECT_IDS, rng);
+    while (obj === lastObj);
+    lastObj = obj;
+    puzzles[level] = { level, size, obj, diff: makeDiff(rng, obj, level), oddIdx: Math.floor(rng() * size * size) };
     return puzzles[level];
   }
 
